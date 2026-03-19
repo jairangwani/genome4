@@ -166,7 +166,7 @@ def converge(project_dir: str, agent_manager):
                 print(f"  {len(pending)} agents working in parallel...")
 
         # Collect: wait for any agent to finish
-        finished_name = agent_manager.wait_for_any_completion(
+        finished_name, dispatch_id = agent_manager.wait_for_any_completion(
             timeout=config.get("agent_timeout", 300))
 
         if finished_name is None:
@@ -183,6 +183,11 @@ def converge(project_dir: str, agent_manager):
 
         if finished_name not in pending:
             continue
+
+        # Check dispatch ID to filter stale signals from killed agents
+        expected_id = pending[finished_name].get("handle", {}).get("dispatch_id", "")
+        if dispatch_id and expected_id and dispatch_id != expected_id:
+            continue  # stale signal from old reader thread
 
         info = pending.pop(finished_name)
         result = agent_manager.collect_result(info["handle"], timeout=10)

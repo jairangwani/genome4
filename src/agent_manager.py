@@ -9,6 +9,7 @@ import subprocess
 import os
 import threading
 import queue
+import uuid
 
 
 class AgentManager:
@@ -67,12 +68,15 @@ class AgentManager:
                 info["alive"] = False
             return {"success": False, "error": f"Agent '{name}' timed out after {actual_timeout}s"}
 
-    def wait_for_any_completion(self, timeout: float = None) -> str | None:
-        """Block until any dispatched agent finishes. Returns agent name."""
+    def wait_for_any_completion(self, timeout: float = None) -> tuple[str, str] | tuple[None, None]:
+        """Block until any dispatched agent finishes. Returns (agent_name, dispatch_id)."""
         try:
-            return self.completion_queue.get(timeout=timeout or self.task_timeout)
+            item = self.completion_queue.get(timeout=timeout or self.task_timeout)
+            if isinstance(item, tuple):
+                return item  # (name, dispatch_id)
+            return item, ""  # legacy compat
         except queue.Empty:
-            return None
+            return None, None
 
     def kill(self, name: str = None):
         """Kill agent process(es)."""
@@ -154,6 +158,7 @@ class AgentManager:
 
         result_q = queue.Queue()
         completion_q = self.completion_queue
+        dispatch_id = str(uuid.uuid4())[:8]
 
         def _reader():
             try:
@@ -161,7 +166,7 @@ class AgentManager:
                     line = proc.stdout.readline()
                     if not line:
                         result_q.put({"type": "error", "error": "stdout closed"})
-                        completion_q.put(name)
+                        completion_q.put((name, dispatch_id))
                         return
                     line = line.decode().strip()
                     if not line:
@@ -170,16 +175,16 @@ class AgentManager:
                         msg = json.loads(line)
                         if msg.get("type") == "result":
                             result_q.put({"type": "result", "msg": msg})
-                            completion_q.put(name)
+                            completion_q.put((name, dispatch_id))
                             return
                     except json.JSONDecodeError:
                         continue
             except Exception as e:
                 result_q.put({"type": "error", "error": str(e)})
-                completion_q.put(name)
+                completion_q.put((name, dispatch_id))
 
         threading.Thread(target=_reader, daemon=True).start()
-        return {"agent_name": name, "result_queue": result_q}
+        return {"agent_name": name, "result_queue": result_q, "dispatch_id": dispatch_id}
 
     def _extract_text(self, msg: dict) -> str:
         if isinstance(msg.get("result"), str):
