@@ -52,10 +52,11 @@ class PlanningWorkflow(Node):
 
         # --- HOLISTIC PLANNING ---
         # Has any agent marked initial planning as complete?
+        # Check doc field for the marker. Must be a standalone declaration,
+        # not an instruction like "mark doc with 'initial plan complete'".
         initial_plan_done = any(
-            "initial plan complete" in (
-                " ".join(a.knowledge or []) + " " + (getattr(a, 'doc', '') or '')
-            ).lower()
+            (getattr(a, 'doc', '') or '').lower().startswith("initial plan complete")
+            or "status: initial plan complete" in (getattr(a, 'doc', '') or '').lower()
             for a in genome.nodes_by_type("agent")
         )
 
@@ -68,8 +69,9 @@ class PlanningWorkflow(Node):
             tasks.append(Task(
                 f"Plan the project. Read {reference} for the full spec. {summary} "
                 f"Create ALL personas, use cases, journeys, and architecture. "
-                f"Only add 'initial plan complete' to your doc field when "
-                f"EVERYTHING in the spec is covered.",
+                f"When done, set your doc field to start with 'Initial plan complete' "
+                f"(e.g. doc = 'Initial plan complete. All spec items covered.'). "
+                f"Only do this when EVERYTHING in the spec is covered.",
                 self.name, phase="planning", priority=1,
                 check="needs-initial-plan",
             ))
@@ -106,9 +108,8 @@ class PlanningWorkflow(Node):
 
         # --- HOLISTIC REVIEW ---
         review_done = any(
-            "review complete" in (
-                " ".join(a.knowledge or []) + " " + (getattr(a, 'doc', '') or '')
-            ).lower()
+            (getattr(a, 'doc', '') or '').lower().startswith("review complete")
+            or "status: review complete" in (getattr(a, 'doc', '') or '').lower()
             for a in genome.nodes_by_type("agent")
         )
 
@@ -137,7 +138,8 @@ class PlanningWorkflow(Node):
                 f"{summary} Challenge everything. Are all user types covered? "
                 f"Are use cases comprehensive? Are journeys deep with failure "
                 f"points? Is architecture production-ready? "
-                f"Add 'review complete' to your doc field when genuinely satisfied.",
+                f"When satisfied, set your doc field to start with 'Review complete' "
+                f"(e.g. doc = 'Review complete. Plan is production-ready.').",
                 self.name, phase="review", priority=6, severity="warning",
                 check="needs-holistic-review",
             ))
