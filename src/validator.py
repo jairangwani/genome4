@@ -127,7 +127,7 @@ def _check_cascade_staleness(genome: Genome) -> list[Task]:
             continue
         tasks.append(Task(
             f"'{name}' may be stale: {reason}",
-            name, phase="planning", priority=3, severity="warning",
+            name, phase="planning", priority=3, severity="info",
             check="cascade-staleness",
             suggestion=f"Review '{name}' — an upstream dependency changed",
         ))
