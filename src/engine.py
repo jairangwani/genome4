@@ -54,6 +54,7 @@ def converge(project_dir: str, agent_manager):
     stuck_count = 0
     last_error_count = float("inf")
     revert_counts: dict[str, int] = {}
+    task_recurrence: dict[str, int] = {}  # check_id → times seen after being "resolved"
     last_feedback = ""
     pending: dict[str, dict] = {}
 
@@ -108,12 +109,21 @@ def converge(project_dir: str, agent_manager):
 
         # Dispatch: pick tasks for idle agents
         if not pending:
+            # Cycle detection: skip tasks whose check ID has recurred 3+ times
+            # This prevents infinite loops from agent-written validate() checks
+            # that regenerate after being "fixed" (e.g., staleness ping-pong).
+            cycling_checks = {k for k, v in task_recurrence.items() if v >= 3}
+            if cycling_checks:
+                print(f"  Cycling checks skipped: {cycling_checks}")
+
             phase_eligible = [i for i in issues if i.phase == current_phase] if current_phase else issues
             eligible = [i for i in phase_eligible
-                        if revert_counts.get(i.message, 0) < config["max_reverts"]]
+                        if revert_counts.get(i.message, 0) < config["max_reverts"]
+                        and i.check not in cycling_checks]
             if not eligible:
                 eligible = [i for i in issues
-                            if revert_counts.get(i.message, 0) < config["max_reverts"]]
+                            if revert_counts.get(i.message, 0) < config["max_reverts"]
+                            and i.check not in cycling_checks]
             if not eligible:
                 print(f"\nFAIL: All tasks skipped. {len(issues)} remain.")
                 agent_manager.kill()
@@ -259,8 +269,19 @@ def converge(project_dir: str, agent_manager):
             parts.append(f"NEW: {'; '.join(i.message[:60] for i in new_issues[:3])}")
         last_feedback = "\n".join(parts) if parts else ""
 
-        # Progress tracking
+        # Cycle detection: if the assigned task was "fixed" but its check type
+        # reappears in after_issues, it's likely a cycle (fix A triggers B,
+        # fix B triggers A). Track recurrence by check ID.
         assigned_fixed = top.message not in after_msgs
+        if assigned_fixed and top.check:
+            check_still_present = any(t.check == top.check for t in after_issues)
+            if check_still_present:
+                task_recurrence[top.check] = task_recurrence.get(top.check, 0) + 1
+                if task_recurrence[top.check] >= 3:
+                    print(f"  CYCLE DETECTED: check '{top.check}' keeps regenerating. Skipping future instances.")
+            else:
+                task_recurrence.pop(top.check, None)  # reset if truly resolved
+
         if assigned_fixed:
             print(f"  FIXED: {top.message[:80]}")
             stuck_count = 0
