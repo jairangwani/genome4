@@ -331,7 +331,50 @@ Special agents that span branches:
 
 These agents create nodes in their own branches (Security Domain, Architecture Domain) with edges referencing nodes in other branches.
 
-### 5.5 Agent Self-Reflection
+### 5.5 How Agents Learn the System
+
+Three instruction layers, plus safety nets:
+
+**Layer 1: System Prompt** (identity only)
+```
+"You are 'Infrastructure Agent'. [description].
+Read ALL files listed in each task."
+```
+
+**Layer 2: Task Message** (state-specific instructions)
+Each lifecycle state produces a task with SPECIFIC instructions for what to do:
+- State 1: "Read spec lines X-Y. List ALL children as expected_children = ['Exact Name', ...]"
+- State 2: "Create child node 'Rate Limiter Service' with parent='Gateway Module', level=2"
+- State 3: "Re-read spec. Your list has N items. What's NOT covered? Add or set verified=True"
+
+The validate() method writes these instructions. The agent follows the specific task.
+
+**Layer 3: Agent Guide Seed** (examples + patterns)
+The agent_guide.py seed node contains CONCRETE EXAMPLES for every lifecycle state:
+
+```python
+# Example: Creating a module node (State 2 output)
+from genome5 import Node
+class GatewayModule(Node):
+    name = "Gateway Module"
+    type = "module"
+    level = 1
+    spec_reference = "docs/PANDO-PLAN.md:100-130"
+    expected_children = ["Gateway API Service", "Rate Limiter Service"]
+    edges = {"parent": "Infrastructure Domain", "owned_by": "Infrastructure Agent"}
+```
+
+Examples are more powerful than abstract rules. Agent sees the pattern and follows it.
+
+**Safety Nets** (engine catches mistakes):
+- Wrong Python syntax → load error → P1 structural task
+- Missing parent edge → dangling edge → structural task
+- Wrong child name → expected_children check fails → task re-fires
+- Missing name/description → base validate() catches it
+
+Instructions reduce errors. Engine catches what agents get wrong.
+
+### 5.6 Agent Self-Reflection
 
 After every task, the agent prompt includes:
 ```
